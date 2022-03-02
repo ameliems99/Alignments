@@ -1,0 +1,61 @@
+---
+output: html_document
+---
+```{r echo = FALSE}
+library(BiocManager)  #to load other Bioconductor packages
+library(annotate)  #to run BLAST
+library(dplyr)
+library(knitr)  #for table
+library(ape)  #for evolutionary analysis
+library(Biostrings)  #for alignment
+library(muscle)  #for alignment
+library(reshape2)
+library(ggplot2)  #for matrix figure
+library(ggtree)  #for tree figure
+```
+## BLAST 
+```{r message = FALSE}
+Unknown <- read.table("./A6_MAHRTSMITH_AMELIE_UnknownSeq.txt")  #import Unknown DNA sequence
+Unknown <- paste(Unknown$V1[1:nrow(Unknown)], collapse = "")  #convert sequence to string
+USblast<- blastSequences(paste(Unknown), as = 'data.frame', hitListSize = 10, timeout = 400)  #search blastn database for unknown sequence
+USblast %>%
+  select("Hit" = Hit_num, "Description" = Hit_def, "Accession No." = Hit_accession, "E value" = Hsp_evalue, "Alignment length" = 'Hsp_align-len') %>%
+  kable(caption = "**Table 1** BLAST hit sequences and their relation to the unknown sequence.")  #output table w/ relevant info
+```
+The top 10 hits in the BLASTn database corresponding to the unknown sequence are all from the SARS-CoV-2 genome. The e-value of 0 for each hit sequence means that we would not expect hits of similar quality to be found in this database just by chance. The alignment length for all hit sequences is equal to the length of the unknown sequence, meaning each hit contains a segment with the identical sequence to the unknown one.   
+   
+## Alignments 
+```{r warning = FALSE}
+uDNAstring <- USblast$Hsp_hseq %>%  #pull sequences from the BLAST hits
+  as.character %>%  #convert to character vector
+  lapply(., paste0, collapse = "") %>%  #collapse to single string 
+  unlist %>%  #flatten list to vector
+  DNAStringSet  #convert to DNAStringSet object (Biostrings pkg)
+names(uDNAstring) <- paste(1:nrow(USblast), USblast$Hit_accession, sep = "_")
+print(uAlign <- muscle::muscle(stringset = uDNAstring, quiet = TRUE))  #muscle from muscle pkg
+```
+The alignment of the top 10 BLAST hit sequences shows that they each contain an identical segment, which corresponds to the unknown sequence isolated from the patient.   
+   
+## Evolutionary Relationships
+#### Distance Matrix
+```{r}
+uAlignBin <- as.DNAbin(uAlign)  #from ape pkg
+uDist <- dist.dna(uAlignBin, model = "K80")  #calculate genetic distance between hit sequences
+uDistMat <- as.matrix(uDist)  #convert to matrix
+LDistMat <- melt(uDistMat)  #rearrange to linear matrix (reshape2 pkg)
+source ("./theme_A6.txt")
+  theme_set(theme_A6())
+ggplot(data = LDistMat, aes(x = Var1, y = Var2, fill = value, colour = I("white"))) + 
+  geom_tile() + labs(x = "", y = "")  #plot matrix
+```
+**Figure 1** All of the hit sequences have the same genetic distance (0) from each other, as shown by the uniformity of the matrix. This means that there is no evolutionary divergence between these species.   
+   
+#### Phylogenetic Tree
+```{r}
+uTree <- nj(uDist)  #ape pkg
+ggtree(uTree) + geom_tiplab() #ggtree pkg
+```
+**Figure 2** The "phylogenetic tree" of the hit sequences is a single branch because the genomes were sequenced from the same species.   
+    
+## Conclusion  
+The unknown sequence isolated from the patient's biofluids is from the SARS-CoV-2 virus. There is no ambiguity; the sequence is found in 10 genomes known to be from this virus (see Table 1), and it aligns perfectly with a region found in each of these genomes (i.e., there are no gaps). At present, there is no evidence that this variant is evolving (see Fig 1 and 2). The patient should be instructed to self-isolate immediately. 
